@@ -30,6 +30,14 @@ panic-probe = { version = "0.3.2", optional = true }
 defmt = { version = "0.3.10", optional = true }
 defmt-rtt = { version = "0.4.1", optional = true }
 
+[lib]
+test = false
+
+[[bin]]
+name = "hello"
+test = false
+bench = false
+
 [[bin]]
 name = "crankshaft"
 test = false
