@@ -1,6 +1,4 @@
 [toolchain]
 channel = "1.84.1"
-components = ["rust-src", "rustfmt"]
-targets = [
-    "thumbv6m-none-eabi",
-]
+components = ["rust-src", "rustfmt", "llvm-tools-preview"]
+targets = ["thumbv6m-none-eabi"]
