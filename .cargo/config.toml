@@ -1,7 +1,5 @@
-# This file was automatically generated.
-
 [target.thumbv6m-none-eabi]
-runner = 'probe-rs run --chip STM32F091RCTx'
+runner = "probe-rs run --chip STM32F091RCTx"
 
 [build]
 target = "thumbv6m-none-eabi"
