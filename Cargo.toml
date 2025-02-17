@@ -17,7 +17,7 @@ embassy-executor = { version = "0.7.0", features = [
     "executor-thread",
     "executor-interrupt",
 ] }
-embassy-time = { version = "0.4.0", features = ["tick-hz-32_768"] }
+embassy-time = { version = "0.4.0", features = ["tick-hz-100_000"] }
 embassy-stm32 = { version = "0.2.0", features = [
     "exti",
     "memory-x",
