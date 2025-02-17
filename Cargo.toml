@@ -34,11 +34,6 @@ defmt-rtt = { version = "0.4.1", optional = true }
 test = false
 
 [[bin]]
-name = "hello"
-test = false
-bench = false
-
-[[bin]]
 name = "crankshaft"
 test = false
 bench = false
