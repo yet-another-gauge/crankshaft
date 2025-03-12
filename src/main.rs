@@ -8,7 +8,7 @@ use {defmt_rtt as _, panic_probe as _};
 
 use crankshaft::debug;
 use embassy_executor::Spawner;
-use embassy_stm32::gpio::Pull;
+use embassy_stm32::gpio::{Level, Output, Pull, Speed};
 use embassy_stm32::time::{hz, khz};
 use embassy_stm32::timer;
 use embassy_stm32::timer::pwm_input::PwmInput;
@@ -19,8 +19,23 @@ bind_interrupts!(struct Irqs {
     TIM2 => timer::CaptureCompareInterruptHandler<peripherals::TIM2>;
 });
 
+// Task for blinking the LED
+#[embassy_executor::task]
+async fn blink_led(mut led: Output<'static>) {
+    loop {
+        // Blink the LED to verify timer functionality
+        debug!("LED ON");
+        led.set_high();
+        Timer::after_secs(5).await;
+
+        debug!("LED OFF");
+        led.set_low();
+        Timer::after_secs(5).await;
+    }
+}
+
 #[embassy_executor::main]
-async fn main(_spawner: Spawner) {
+async fn main(spawner: Spawner) {
     // ===================================================================
     // STM32F091RC Clock Configuration for Nucleo-64 Board
     // ===================================================================
@@ -180,6 +195,12 @@ async fn main(_spawner: Spawner) {
     }
     let p = embassy_stm32::init(config);
 
+    // Initialize PA5 as output for the onboard LED on the Nucleo F091RC
+    let led = Output::new(p.PA5, Level::Low, Speed::Low);
+
+    // Spawn the LED blinking task
+    spawner.spawn(blink_led(led)).unwrap();
+
     // Configure PWM input for Hall-effect sensor
     // The Hall-effect sensor (Speed Sensor Hall-Effect HA-P) has:
     // - Max. frequency: ≤ 10 kHz
@@ -203,12 +224,42 @@ async fn main(_spawner: Spawner) {
     let mut pwm = PwmInput::new_alt(p.TIM2, p.PB3, Pull::None, khz(timer_freq));
     pwm.enable();
 
+    // Main loop for period measurements
     loop {
-        // Get the period in microseconds
-        // The period is measured from rising edge to rising edge
-        let period_us = pwm.get_period_ticks() as u32 / timer_freq;
+        // Get the raw period ticks from the PWM input capture
+        // This is the number of timer ticks between two rising edges
+        let period_ticks = pwm.get_period_ticks() as u32;
+
+        // Get the duty cycle (time between rising and falling edge)
+        let duty_cycle = pwm.get_duty_cycle() as u32;
+
+        // Convert ticks to microseconds
+        // Since timer_freq is in kHz (1,000 kHz = 1 MHz), each tick is 1/timer_freq microseconds
+        // For example, with timer_freq = 1,000 kHz, each tick is 1 microsecond
+        let period_us = period_ticks * 1000 / timer_freq;
+
+        // Calculate duty cycle in microseconds
+        // duty_cycle is a 16-bit value (0-65535) representing the duty cycle percentage
+        // We multiply period_ticks by duty_cycle and divide by 65536 to get the duty cycle ticks
+        let duty_us = (period_ticks * duty_cycle / 65536) * 1000 / timer_freq;
+
+        // Convert to milliseconds for better readability when rotating slowly
+        let period_ms = period_us as f32 / 1_000.0;
+
+        // Convert microseconds to seconds for frequency calculation
+        let period_s = period_us as f32 / 1_000_000.0;
+
+        // Calculate frequency in Hz (if period is non-zero)
+        let frequency_hz = if period_us > 0 { 1.0 / period_s } else { 0.0 };
+
+        // Calculate RPM (revolutions per minute) assuming one pulse per revolution
+        let rpm = frequency_hz * 60.0;
+
         // Additional debug information
-        debug!("Period: {} μs", period_us);
+        debug!(
+            "Raw ticks: {} (period) / {} (duty cycle), Period: {} μs ({} ms, {} s), Duty: {} μs, Freq: {} Hz, RPM: {}",
+            period_ticks, duty_cycle, period_us, period_ms, period_s, duty_us, frequency_hz, rpm
+        );
 
         // Small delay to prevent tight looping
         // This doesn't affect timing accuracy since we're using hardware timers
