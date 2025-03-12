@@ -22,7 +22,7 @@ embassy-stm32 = { version = "0.2.0", features = [
     "exti",
     "memory-x",
     "unstable-pac",
-    "time-driver-tim2",
+    "time-driver-tim3",
     "stm32f091rc",
 ] }
 panic-halt = "1.0.0"
@@ -60,7 +60,6 @@ debug = [
     "defmt-rtt",
     "panic-probe/print-defmt",
     "embassy-executor/defmt",
-    "embassy-sync/defmt",
     "embassy-futures/defmt",
     "embassy-time/defmt",
     "embassy-time/defmt-timestamp-uptime",
