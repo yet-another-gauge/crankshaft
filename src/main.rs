@@ -130,19 +130,19 @@ async fn main(spawner: Spawner) {
     //    - Section 6.2.1 HSE Clock: valid HSE range for STM32F091RC: 4-32 MHz
     // 2. PLL: 8 MHz × 6 = 48 MHz
     //    - PLL input after prediv: 8 MHz (Valid range: 4-24 MHz, Section 6.2.3)
-    //    - PLL multiplier: 6 (Valid range: 2-16, Section 6.2.3)
-    //    - PLL output: 48 MHz (Maximum for STM32F091RC)
+    //    - PLL multiplier:         6 (Valid range: 2-16, Section 6.2.3)
+    //    - PLL output:             48 MHz (Maximum for STM32F091RC)
     // 3. System Clock: 48 MHz from PLL
     //    - Maximum SYSCLK for STM32F091RC: 48 MHz (Section 6.2.1)
     // 4. Bus Clocks:
-    //    - AHB = 48 MHz (SYSCLK/1, valid dividers: 1,2,4,8,16,64,128,256,512)
-    //    - APB1 = 48 MHz (AHB/1, valid dividers: 1,2,4,8,16)
+    //    - SYSCLK/1: AHB  = 48 MHz
+    //    - AHB/1:    APB1 = 48 MHz
     //
     // Resulting Peripheral Frequencies:
     // - Core and CPU: 48 MHz
-    // - Flash Memory: 48 MHz (0 wait states required up to 24 MHz, 1 wait state for 48 MHz)
-    // - GPIO Ports: 48 MHz
-    // - Timers (including TIM2 used for PWM input): 48 MHz
+    // - Flash Memory: 48 MHz
+    // - GPIO Ports:   48 MHz
+    // - Timers:       48 MHz
     //   Note: For PWM input from Hall-Effect sensors (see "Speed Sensor Hall-Effect HA-P.pdf"),
     //         the 48 MHz timer clock provides high-resolution pulse width measurements
     // - Communication Peripherals (I2C, SPI, UART): 48 MHz
@@ -215,9 +215,19 @@ async fn main(spawner: Spawner) {
     //   Calculation: 10 kHz = 0.0001 seconds per pulse = 100 μs
     //   With 1 MHz timer, we get 100 timer ticks per pulse at maximum frequency
     //
-    // This provides excellent resolution for measuring the angle and detecting missing teeth,
-    // even at the sensor's maximum operating frequency.
-    let timer_freq = 1_000; // kHz (1 MHz)
+    // Measurement Limits:
+    // - TIM2 on the STM32F091RC is a 32-bit timer, so it can count up to 4,294,967,295 ticks
+    // - With 1 MHz timer frequency (1 μs per tick), the maximum measurable period is:
+    //   4,294,967,295 μs = 4,294.97 seconds = 71.58 minutes
+    // - This corresponds to a minimum measurable frequency of:
+    //   1 / 4,294.97 s = 0.000233 Hz
+    // - For a 30-tooth crankshaft gear, this means a minimum RPM of:
+    //   0.000233 Hz * 60 / 30 = 0.000466 RPM
+    //
+    // This provides an extremely wide measurement range, from very slow rotations
+    // to the sensor's maximum frequency of 10 kHz (600,000 RPM for a single tooth,
+    // or 20,000 RPM for a 30-tooth gear).
+    let timer_freq = 1_000; // kHz
 
     // Create and enable PWM input capture on TIM2 using PB3 pin
     // This will capture the Hall-effect sensor signal
@@ -226,39 +236,41 @@ async fn main(spawner: Spawner) {
 
     // Main loop for period measurements
     loop {
-        // Get the raw period ticks from the PWM input capture
-        // This is the number of timer ticks between two rising edges
-        let period_ticks = pwm.get_period_ticks() as u32;
+        // Hall-effect sensor signal timing diagram:
+        //
+        //     Rising Edge           Falling Edge             Rising Edge
+        //         ↓                     ↓                        ↓
+        //         ┌─────────────────────┐                        ┌────
+        //         │                     │                        │
+        // ────────┘                     └────────────────────────┘
+        //
+        //         |<--- Width Ticks --->|
+        //         |<------------- Period Ticks ----------------->|
+        //
+        // Measurements:
+        // - Duty Cycle:   (Width Ticks / Period Ticks) * 100%
+        // - Width Ticks:  Timer ticks between rising and falling edge (high state duration)
+        // - Period Ticks: Timer ticks between consecutive rising edges (one complete cycle)
+        let duty_cycle_percent = pwm.get_duty_cycle();
 
-        // Get the duty cycle (time between rising and falling edge)
-        let duty_cycle = pwm.get_duty_cycle() as u32;
+        let width_ticks = pwm.get_width_ticks();
+        let width_us = (width_ticks as u64 * 1_000 / timer_freq as u64) as u32; // milliseconds
 
-        // Convert ticks to microseconds
-        // Since timer_freq is in kHz (1,000 kHz = 1 MHz), each tick is 1/timer_freq microseconds
-        // For example, with timer_freq = 1,000 kHz, each tick is 1 microsecond
-        let period_us = period_ticks * 1000 / timer_freq;
-
-        // Calculate duty cycle in microseconds
-        // duty_cycle is a 16-bit value (0-65535) representing the duty cycle percentage
-        // We multiply period_ticks by duty_cycle and divide by 65536 to get the duty cycle ticks
-        let duty_us = (period_ticks * duty_cycle / 65536) * 1000 / timer_freq;
-
-        // Convert to milliseconds for better readability when rotating slowly
-        let period_ms = period_us as f32 / 1_000.0;
-
-        // Convert microseconds to seconds for frequency calculation
-        let period_s = period_us as f32 / 1_000_000.0;
+        let period_ticks = pwm.get_period_ticks();
+        let period_us = (period_ticks as u64 * 1_000 / timer_freq as u64) as u32;
+        let period_ms = period_us as f32 / 1_000.0; // milliseconds
+        let period_s = period_ms / 1_000.0; // seconds
 
         // Calculate frequency in Hz (if period is non-zero)
         let frequency_hz = if period_us > 0 { 1.0 / period_s } else { 0.0 };
 
-        // Calculate RPM (revolutions per minute) assuming one pulse per revolution
-        let rpm = frequency_hz * 60.0;
+        // Calculate RPM (revolutions per minute)
+        // For a 30-tooth crankshaft gear: RPM = Frequency(Hz) * 60 / 30
+        let rpm = frequency_hz * 60.0 / 30.0;
 
-        // Additional debug information
         debug!(
-            "Raw ticks: {} (period) / {} (duty cycle), Period: {} μs ({} ms, {} s), Duty: {} μs, Freq: {} Hz, RPM: {}",
-            period_ticks, duty_cycle, period_us, period_ms, period_s, duty_us, frequency_hz, rpm
+            "Period: {} ticks ({} μs, {} ms, {} s), Width: {} ticks ({} μs), Duty: {}%, Freq: {} Hz, RPM: {}",
+            period_ticks, period_us, period_ms, period_s, width_ticks, width_us, duty_cycle_percent, frequency_hz, rpm
         );
 
         // Small delay to prevent tight looping
