@@ -6,13 +6,18 @@ use panic_halt as _;
 #[cfg(feature = "defmt")]
 use {defmt_rtt as _, panic_probe as _};
 
-use crankshaft::{debug, trigger_wheel::*};
+use crankshaft::{debug, info};
 use embassy_executor::Spawner;
-use embassy_stm32::gpio::{Level, Output, Pull, Speed};
 use embassy_stm32::time::{hz, khz};
-use embassy_stm32::timer;
-use embassy_stm32::timer::pwm_input::PwmInput;
+use embassy_stm32::timer::{self, Channel};
 use embassy_stm32::{bind_interrupts, peripherals, Config};
+use embassy_stm32::{
+    gpio::{Level, Output, Pull, Speed},
+    timer::{
+        input_capture::{CapturePin, InputCapture},
+        low_level::CountingMode,
+    },
+};
 use embassy_time::Timer;
 
 bind_interrupts!(struct Irqs {
@@ -141,9 +146,7 @@ async fn main(spawner: Spawner) {
     // - Flash Memory: 48 MHz
     // - GPIO Ports:   48 MHz
     // - Timers:       48 MHz
-    //   Note: For PWM input from Hall-Effect sensors (see "Speed Sensor Hall-Effect HA-P.pdf"),
-    //         the 48 MHz timer clock provides high-resolution pulse width measurements
-    // - Communication Peripherals (I2C, SPI, UART): 48 MHz
+    // - Peripherals:  48 MHz
 
     let mut config = Config::default();
     {
@@ -195,10 +198,9 @@ async fn main(spawner: Spawner) {
     // Spawn the LED blinking task
     spawner.spawn(blink_led(led)).unwrap();
 
-    // Configure PWM input for Hall-effect sensor
     // The Hall-effect sensor (Speed Sensor Hall-Effect HA-P) has:
     // - Max. frequency: ≤ 10 kHz
-    // - Accuracy repeatability of the falling edge: < 1.5% (≤6 kHz), < 2% (≤10 kHz)
+    // - Accuracy repeatability of the falling edge: < 1.5% (≤ 6 kHz), < 2% (≤ 10 kHz)
     //
     // We'll use a timer frequency of 1 MHz (1 μs resolution) which gives us:
     // - At 6000 RPM (100 Hz): 10,000 timer ticks per revolution
@@ -219,51 +221,23 @@ async fn main(spawner: Spawner) {
     //   0.000233 Hz * 60 / 30 = 0.000466 RPM
     let timer_freq = 1_000; // kHz
 
-    // Create and enable PWM input capture on TIM2 using PB3 pin
-    let mut pwm = PwmInput::new_alt(p.TIM2, p.PB3, Pull::None, khz(timer_freq));
-    pwm.enable();
+    let ch2 = CapturePin::new_ch2(p.PB3, Pull::None);
+    let mut ic = InputCapture::new(
+        p.TIM2,
+        None,
+        Some(ch2),
+        None,
+        None,
+        Irqs,
+        khz(timer_freq),
+        CountingMode::EdgeAlignedUp,
+    );
 
-    let trigger_wheel = TriggerWheel::new(WheelType::_36_2_2_2);
-    
     loop {
-        // Hall-effect sensor signal timing diagram:
-        //
-        //     Rising Edge           Falling Edge             Rising Edge
-        //         ↓                     ↓                        ↓
-        //         ┌─────────────────────┐                        ┌────
-        //         │                     │                        │
-        // ────────┘                     └────────────────────────┘
-        //
-        //         |<--- Width Ticks --->|
-        //         |<------------- Period Ticks ----------------->|
-        //
-        // Measurements:
-        // - Duty Cycle:   (Width Ticks / Period Ticks) * 100%
-        // - Width Ticks:  Timer ticks between rising and falling edge (high state duration)
-        // - Period Ticks: Timer ticks between consecutive rising edges (one complete cycle)
-        let duty_cycle_percent = pwm.get_duty_cycle();
+        info!("wait for rising edge");
+        ic.wait_for_rising_edge(Channel::Ch2).await;
 
-        let width_ticks = pwm.get_width_ticks();
-        let width_us = (width_ticks as u64 * 1_000 / timer_freq as u64) as u32;
-        let width_ms = width_us as f32 / 1_000.0; // milliseconds
-        let width_s = width_ms / 1_000.0; // seconds
-
-        let period_ticks = pwm.get_period_ticks();
-        let period_us = (period_ticks as u64 * 1_000 / timer_freq as u64) as u32;
-        let period_ms = period_us as f32 / 1_000.0; // milliseconds
-        let period_s = period_ms / 1_000.0; // seconds
-
-        // Calculate frequency in Hz (if period is non-zero)
-        let frequency_hz = if period_us > 0 { 1.0 / period_s } else { 0.0 };
-
-        debug!(
-            "period: {} ticks ({} ms, {} s) | width: {} ticks ({} ms, {} s) | duty: {}% | freq: {} Hz | wheel: {}",
-            period_ticks, period_ms, period_s, width_ticks, width_ms, width_s, duty_cycle_percent, frequency_hz, 
-            trigger_wheel.wheel_type
-        );
-
-        // Small delay to prevent tight looping
-        // This doesn't affect timing accuracy since we're using hardware timers
-        Timer::after_millis(10).await;
+        let capture_value = ic.get_capture_value(Channel::Ch2);
+        info!("new capture! {}", capture_value);
     }
 }
