@@ -20,6 +20,12 @@ use embassy_stm32::{
 };
 use embassy_time::{Instant, Timer};
 
+#[cfg(feature = "timer-16bit")]
+bind_interrupts!(struct Irqs {
+    TIM3 => timer::CaptureCompareInterruptHandler<peripherals::TIM3>;
+});
+
+#[cfg(feature = "timer-32bit")]
 bind_interrupts!(struct Irqs {
     TIM2 => timer::CaptureCompareInterruptHandler<peripherals::TIM2>;
 });
@@ -78,55 +84,6 @@ async fn main(spawner: Spawner) {
     //
     // Note: In STM32F09x, the PLL source is selected in RCC_CFGR bits 16-15 (PLLSRC),
     // not in a separate RCC_PLLCFGR register as in some other STM32 families.
-    //
-    // 2. TIM2 Registers for PWM Input Configuration:
-    //
-    // TIM2_CR1 (Section 18.4.1):
-    // +--------+--------+------+------+--------+------+------+------+------+
-    // | 15-10  |  9-8   |  7   |  6-5 |   4    |  3   |  2   |  1   |  0   |
-    // +--------+--------+------+------+--------+------+------+------+------+
-    // | Res.   | CKD    | ARPE | CMS  | DIR    | OPM  | URS  | UDIS | CEN  |
-    // +--------+--------+------+------+--------+------+------+------+------+
-    //                                                               ^
-    //                                                               |
-    //                                                               +-- Set to 1: Counter enabled
-    //
-    // TIM2_CCMR1 (Capture/Compare Mode Register 1, Section 18.4.7):
-    // +--------+--------+--------+--------+--------+--------+
-    // | 15-12  | 11-10  |  9-8   |  7-4   |  3-2   |  1-0   |
-    // +--------+--------+--------+--------+--------+--------+
-    // | IC2F   | IC2PSC |  CC2S  |  IC1F  | IC1PSC |  CC1S  |
-    // | [3:0]  | [1:0]  | [1:0]  | [3:0]  | [1:0]  | [1:0]  |
-    // +--------+--------+--------+--------+--------+--------+
-    //                   ^                          ^
-    //                   |                          |
-    //                   |                          +-- Set to 01: IC1 mapped on TI1 (rising edge capture)
-    //                   +----------------------------- Set to 10: IC2 mapped on TI1 (falling edge capture)
-
-    //
-    // TIM2_CCER (Capture/Compare Enable Register, Section 18.4.9):
-    // +--------+------+------+------+------+------+------+------+------+
-    // | 15-8   |  7   |  6   |  5   |  4   |  3   |  2   |  1   |  0   |
-    // +--------+------+------+------+------+------+------+------+------+
-    // | Other  | CC2NP| Res. | CC2P | CC2E | CC1NP| Res. | CC1P | CC1E |
-    // | Bits   |      |      |      |      |      |      |      |      |
-    // +--------+------+------+------+------+------+------+------+------+
-    //                        ^      ^                    ^      ^
-    //                        |      |                    |      |
-    //                        |      |                    |      +-- Set to 1: Capture enabled for CC1
-    //                        |      |                    +--------- Set to 0: Capture on rising edge for CC1
-    //                        |      +------------------------------ Set to 1: Capture enabled for CC2
-    //                        +--------------------------------- --- Set to 1: Capture on falling edge for CC2
-    //
-    // TIM2_SMCR (Slave Mode Control Register, Section 18.4.3):
-    // +------+------+--------+--------+------+------+------+------+
-    // |  15  |  14  | 13-12  | 11-8   |  7   | 6-4  |  3   | 2-0  |
-    // +------+------+--------+--------+------+------+------+------+
-    // | ETP  | ECE  | ETPS   | ETF    | MSM  | TS   | OCCS | SMS  |
-    // +------+------+--------+--------+------+------+------+------+
-    //                                                      ^
-    //                                                      |
-    //                                                      +-- Set to 100: Reset Mode - Counter reset on rising edge of TRGI
     //
     // Clock Tree Overview:
     // 1. Input: ST-LINK MCO (8 MHz) → HSE input in bypass mode
@@ -210,39 +167,50 @@ async fn main(spawner: Spawner) {
     // - At max 10 kHz: 100 timer ticks per period
     //   Calculation: 10 kHz = 0.0001 seconds per pulse = 100 μs
     //   With 1 MHz timer, we get 100 timer ticks per pulse at maximum frequency
-    //
-    // Measurement Limits:
-    // - TIM2 on the STM32F091RC is a 32-bit timer, so it can count up to 4,294,967,295 ticks
-    // - With 1 MHz timer frequency (1 μs per tick), the maximum measurable period is:
-    //   4,294,967,295 μs = 4,294.97 seconds = 71.58 minutes
-    // - This corresponds to a minimum measurable frequency of:
-    //   1 / 4,294.97 s = 0.000233 Hz
-    //   For a 30-tooth crankshaft gear, this means a minimum RPM of:
-    //   0.000233 Hz * 60 / 30 = 0.000466 RPM
     let timer_freq = 1_000; // kHz
 
-    let ch2 = CapturePin::new_ch2(p.PB3, Pull::None);
-    let mut ic = InputCapture::new(
-        p.TIM2,
-        None,
-        Some(ch2),
-        None,
-        None,
-        Irqs,
-        khz(timer_freq),
-        CountingMode::EdgeAlignedUp,
-    );
+    #[cfg(feature = "timer-16bit")]
+    let (mut ic, ch) = {
+        let ch1 = CapturePin::new_ch1(p.PB4, Pull::None);
+        let ic = InputCapture::new(
+            p.TIM3,
+            Some(ch1),
+            None,
+            None,
+            None,
+            Irqs,
+            khz(timer_freq),
+            CountingMode::EdgeAlignedUp,
+        );
+        (ic, Channel::Ch1)
+    };
+
+    #[cfg(feature = "timer-32bit")]
+    let (mut ic, ch) = {
+        let ch2 = CapturePin::new_ch2(p.PB3, Pull::None);
+        let ic = InputCapture::new(
+            p.TIM2,
+            None,
+            Some(ch2),
+            None,
+            None,
+            Irqs,
+            khz(timer_freq),
+            CountingMode::EdgeAlignedUp,
+        );
+        (ic, Channel::Ch2)
+    };
 
     loop {
-        info!("wait for rising edge");
-        ic.wait_for_rising_edge(Channel::Ch2).await;
+        ic.wait_for_rising_edge(ch).await;
 
-        let capture_ticks = ic.get_capture_value(Channel::Ch2);
+        let capture_ticks = ic.get_capture_value(ch);
         let capture_instant = Instant::from_ticks(capture_ticks as u64);
+
         info!(
-            "new capture! {}: {} seconds",
+            "Capture at {}: {} μs",
             capture_instant,
-            capture_instant.as_secs()
+            capture_instant.as_millis()
         );
     }
 }
