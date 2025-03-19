@@ -18,7 +18,7 @@ use embassy_stm32::{
         low_level::CountingMode,
     },
 };
-use embassy_time::Timer;
+use embassy_time::{Instant, Timer};
 
 bind_interrupts!(struct Irqs {
     TIM2 => timer::CaptureCompareInterruptHandler<peripherals::TIM2>;
@@ -237,7 +237,12 @@ async fn main(spawner: Spawner) {
         info!("wait for rising edge");
         ic.wait_for_rising_edge(Channel::Ch2).await;
 
-        let capture_value = ic.get_capture_value(Channel::Ch2);
-        info!("new capture! {}", capture_value);
+        let capture_ticks = ic.get_capture_value(Channel::Ch2);
+        let capture_instant = Instant::from_ticks(capture_ticks as u64);
+        info!(
+            "new capture! {}: {} seconds",
+            capture_instant,
+            capture_instant.as_secs()
+        );
     }
 }
