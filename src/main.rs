@@ -6,7 +6,7 @@ use panic_halt as _;
 #[cfg(feature = "defmt")]
 use {defmt_rtt as _, panic_probe as _};
 
-use crankshaft::debug;
+use crankshaft::{debug, trigger_wheel::*};
 use embassy_executor::Spawner;
 use embassy_stm32::gpio::{Level, Output, Pull, Speed};
 use embassy_stm32::time::{hz, khz};
@@ -19,16 +19,14 @@ bind_interrupts!(struct Irqs {
     TIM2 => timer::CaptureCompareInterruptHandler<peripherals::TIM2>;
 });
 
-// Task for blinking the LED
 #[embassy_executor::task]
 async fn blink_led(mut led: Output<'static>) {
     loop {
-        // Blink the LED to verify timer functionality
-        debug!("LED ON");
+        debug!("LED on");
         led.set_high();
         Timer::after_secs(5).await;
 
-        debug!("LED OFF");
+        debug!("LED off");
         led.set_low();
         Timer::after_secs(5).await;
     }
@@ -187,12 +185,8 @@ async fn main(spawner: Spawner) {
         // APB1 (Advanced Peripheral Bus) clock = AHB clock / 1 = 48 MHz
         // This bus connects to most peripherals including timers
         config.rcc.apb1_pre = APBPrescaler::DIV1;
-
-        // Advantages of this configuration:
-        // 1. Maximum Performance: Running at the maximum supported frequency (48 MHz)
-        // 2. Stable Clock Source: Using the ST-LINK MCO output provides a stable reference
-        // 3. Simplified Hardware: No external crystal oscillator required
     }
+
     let p = embassy_stm32::init(config);
 
     // Initialize PA5 as output for the onboard LED on the Nucleo F091RC
@@ -221,20 +215,16 @@ async fn main(spawner: Spawner) {
     //   4,294,967,295 μs = 4,294.97 seconds = 71.58 minutes
     // - This corresponds to a minimum measurable frequency of:
     //   1 / 4,294.97 s = 0.000233 Hz
-    // - For a 30-tooth crankshaft gear, this means a minimum RPM of:
+    //   For a 30-tooth crankshaft gear, this means a minimum RPM of:
     //   0.000233 Hz * 60 / 30 = 0.000466 RPM
-    //
-    // This provides an extremely wide measurement range, from very slow rotations
-    // to the sensor's maximum frequency of 10 kHz (600,000 RPM for a single tooth,
-    // or 20,000 RPM for a 30-tooth gear).
     let timer_freq = 1_000; // kHz
 
     // Create and enable PWM input capture on TIM2 using PB3 pin
-    // This will capture the Hall-effect sensor signal
     let mut pwm = PwmInput::new_alt(p.TIM2, p.PB3, Pull::None, khz(timer_freq));
     pwm.enable();
 
-    // Main loop for period measurements
+    let trigger_wheel = TriggerWheel::new(WheelType::_36_2_2_2);
+    
     loop {
         // Hall-effect sensor signal timing diagram:
         //
@@ -254,7 +244,9 @@ async fn main(spawner: Spawner) {
         let duty_cycle_percent = pwm.get_duty_cycle();
 
         let width_ticks = pwm.get_width_ticks();
-        let width_us = (width_ticks as u64 * 1_000 / timer_freq as u64) as u32; // milliseconds
+        let width_us = (width_ticks as u64 * 1_000 / timer_freq as u64) as u32;
+        let width_ms = width_us as f32 / 1_000.0; // milliseconds
+        let width_s = width_ms / 1_000.0; // seconds
 
         let period_ticks = pwm.get_period_ticks();
         let period_us = (period_ticks as u64 * 1_000 / timer_freq as u64) as u32;
@@ -264,13 +256,10 @@ async fn main(spawner: Spawner) {
         // Calculate frequency in Hz (if period is non-zero)
         let frequency_hz = if period_us > 0 { 1.0 / period_s } else { 0.0 };
 
-        // Calculate RPM (revolutions per minute)
-        // For a 30-tooth crankshaft gear: RPM = Frequency(Hz) * 60 / 30
-        let rpm = frequency_hz * 60.0 / 30.0;
-
         debug!(
-            "Period: {} ticks ({} μs, {} ms, {} s), Width: {} ticks ({} μs), Duty: {}%, Freq: {} Hz, RPM: {}",
-            period_ticks, period_us, period_ms, period_s, width_ticks, width_us, duty_cycle_percent, frequency_hz, rpm
+            "period: {} ticks ({} ms, {} s) | width: {} ticks ({} ms, {} s) | duty: {}% | freq: {} Hz | wheel: {}",
+            period_ticks, period_ms, period_s, width_ticks, width_ms, width_s, duty_cycle_percent, frequency_hz, 
+            trigger_wheel.wheel_type
         );
 
         // Small delay to prevent tight looping
