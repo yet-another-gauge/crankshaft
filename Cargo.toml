@@ -25,6 +25,8 @@ embassy-stm32 = { version = "0.2.0", features = [
     "stm32f091rc",
 ] }
 heapless = "0.8.0"
+adskalman = { version = "0.16.0", default-features = false }
+nalgebra = { version = "0.33.2", default-features = false, features = ["libm"] }
 panic-halt = "1.0.0"
 panic-probe = { version = "0.3.2", optional = true }
 defmt = { version = "0.3.10", optional = true }
