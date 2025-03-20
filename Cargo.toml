@@ -24,6 +24,7 @@ embassy-stm32 = { version = "0.2.0", features = [
     "unstable-pac",
     "stm32f091rc",
 ] }
+heapless = "0.8.0"
 panic-halt = "1.0.0"
 panic-probe = { version = "0.3.2", optional = true }
 defmt = { version = "0.3.10", optional = true }

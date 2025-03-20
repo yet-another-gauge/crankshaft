@@ -6,6 +6,7 @@ use panic_halt as _;
 #[cfg(feature = "defmt")]
 use {defmt_rtt as _, panic_probe as _};
 
+use crankshaft::trigger_wheel::TriggerWheel;
 use crankshaft::{debug, info};
 use embassy_executor::Spawner;
 use embassy_stm32::time::{hz, khz};
@@ -18,7 +19,7 @@ use embassy_stm32::{
         low_level::CountingMode,
     },
 };
-use embassy_time::{Instant, Timer};
+use embassy_time::Timer;
 
 #[cfg(feature = "timer-16bit")]
 bind_interrupts!(struct Irqs {
@@ -201,16 +202,18 @@ async fn main(spawner: Spawner) {
         (ic, Channel::Ch2)
     };
 
+    let mut trigger_wheel = TriggerWheel::new();
+
     loop {
         ic.wait_for_rising_edge(ch).await;
 
         let capture_ticks = ic.get_capture_value(ch);
-        let capture_instant = Instant::from_ticks(capture_ticks as u64);
+        trigger_wheel.add_tick(capture_ticks);
 
         info!(
-            "Capture at {}: {} μs",
-            capture_instant,
-            capture_instant.as_millis()
+            "Capture at tick {} μs, ticks stored: {}",
+            capture_ticks,
+            trigger_wheel.ticks_count()
         );
     }
 }

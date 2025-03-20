@@ -1,20 +1,31 @@
-use core::fmt;
+use heapless::HistoryBuffer;
 
 #[cfg(feature = "defmt")]
 use defmt::Format;
 
-#[cfg_attr(feature = "defmt", derive(Format))]
-pub struct TriggerWheel {}
+pub struct TriggerWheel {
+    ticks: HistoryBuffer<u32, 128>,
+}
 
 impl TriggerWheel {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            ticks: HistoryBuffer::new(),
+        }
+    }
+
+    pub fn add_tick(&mut self, tick: u32) {
+        self.ticks.write(tick);
+    }
+
+    pub fn ticks_count(&self) -> usize {
+        self.ticks.len()
     }
 }
 
-impl fmt::Display for TriggerWheel {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let message = "Trigger wheel";
-        write!(f, "{}", message)
+#[cfg(feature = "defmt")]
+impl Format for TriggerWheel {
+    fn format(&self, f: defmt::Formatter) {
+        defmt::write!(f, "TriggerWheel {{ ticks_count: {} }}", self.ticks_count())
     }
 }
