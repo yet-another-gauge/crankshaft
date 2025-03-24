@@ -49,15 +49,6 @@ impl ObservationModel<f64, U3, U1> for TriggerWheel {
 impl TransitionModelLinearNoControl<f64, U3> for TriggerWheel {
     fn F(&self) -> &Matrix3<f64> {
         // State transition matrix for constant acceleration model.
-        // This matrix implements the kinematic equations:
-        // - New angle = old angle + velocity*dt + 0.5*acceleration*dt²
-        // - New velocity = old velocity + acceleration*dt
-        // - New acceleration = old acceleration (assumed constant)
-        //
-        // The matrix structure encodes these physics equations:
-        // - First row: position update with velocity and acceleration terms
-        // - Second row: velocity update with acceleration term
-        // - Third row: acceleration remains constant
         #[rustfmt::skip]
         static F: Matrix3<f64> = Matrix3::new(
             1.0,  DT, DT_SQUARED_HALF, // [1   dt  dt * dt / 2 ]
