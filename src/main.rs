@@ -150,25 +150,10 @@ async fn main(spawner: Spawner) {
 
     let p = embassy_stm32::init(config);
 
-    // Initialize PA5 as output for the onboard LED on the Nucleo F091RC
     let led = Output::new(p.PA5, Level::Low, Speed::Low);
-
-    // Spawn the LED blinking task
     spawner.spawn(blink_led(led)).unwrap();
 
-    // The Hall-effect sensor (Speed Sensor Hall-Effect HA-P) has:
-    // - Max. frequency: ≤ 10 kHz
-    // - Accuracy repeatability of the falling edge: < 1.5% (≤ 6 kHz), < 2% (≤ 10 kHz)
-    //
-    // We'll use a timer frequency of 1 MHz (1 μs resolution) which gives us:
-    // - At 6000 RPM (100 Hz): 10,000 timer ticks per revolution
-    //   Calculation: 6000 RPM = 100 Hz = 0.01 seconds per revolution = 10,000 μs
-    //   With 1 MHz timer (1 μs resolution), we get 10,000 timer ticks per revolution
-    //
-    // - At max 10 kHz: 100 timer ticks per period
-    //   Calculation: 10 kHz = 0.0001 seconds per pulse = 100 μs
-    //   With 1 MHz timer, we get 100 timer ticks per pulse at maximum frequency
-    let timer_freq = 1_000; // kHz
+    let timer_freq = khz(1_000); // Hz
 
     #[cfg(feature = "timer-16bit")]
     let (mut ic, ch) = {
@@ -180,7 +165,7 @@ async fn main(spawner: Spawner) {
             None,
             None,
             Irqs,
-            khz(timer_freq),
+            timer_freq,
             CountingMode::EdgeAlignedUp,
         );
         (ic, Channel::Ch1)
@@ -196,7 +181,7 @@ async fn main(spawner: Spawner) {
             None,
             None,
             Irqs,
-            khz(timer_freq),
+            timer_freq,
             CountingMode::EdgeAlignedUp,
         );
         (ic, Channel::Ch2)
@@ -206,13 +191,13 @@ async fn main(spawner: Spawner) {
 
     loop {
         ic.wait_for_rising_edge(ch).await;
+        let tick = ic.get_capture_value(ch);
 
-        let capture_ticks = ic.get_capture_value(ch);
-        trigger_wheel.add_tick(capture_ticks);
+        trigger_wheel.add_tick(tick);
 
         info!(
-            "Capture at tick {} μs, ticks stored: {}",
-            capture_ticks,
+            "Captured tick {} μs, ticks stored: {}",
+            tick,
             trigger_wheel.ticks_count()
         );
     }
