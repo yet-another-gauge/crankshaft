@@ -9,7 +9,7 @@ use {defmt_rtt as _, panic_probe as _};
 use crankshaft::trigger_wheel::TriggerWheel;
 use crankshaft::{debug, info};
 use embassy_executor::Spawner;
-use embassy_stm32::time::{hz, khz};
+use embassy_stm32::time::{hz, khz, Hertz};
 use embassy_stm32::timer::{self, Channel};
 use embassy_stm32::{bind_interrupts, peripherals, Config};
 use embassy_stm32::{
@@ -20,6 +20,20 @@ use embassy_stm32::{
     },
 };
 use embassy_time::Timer;
+
+// Timer frequency for input capture.
+//
+// For a crankshaft with 30 teeth:
+// - Idle RPM (800 RPM):
+//   - 13.3 revolutions per second = 400 teeth per second
+//   - 2.5 ms between teeth = 2500 timer ticks per tooth
+// - Average RPM (3000 RPM):
+//   - 50 revolutions per second = 1500 teeth per second
+//   - 0.67 ms between teeth = 670 timer ticks per tooth
+// - Maximum RPM (6000 RPM):
+//   - 100 revolutions per second = 3000 teeth per second
+//   - 0.33 ms between teeth = 330 timer ticks per tooth
+const TIMER_FREQ: Hertz = khz(1_000);
 
 #[cfg(feature = "timer-16bit")]
 bind_interrupts!(struct Irqs {
@@ -153,8 +167,6 @@ async fn main(spawner: Spawner) {
     let led = Output::new(p.PA5, Level::Low, Speed::Low);
     spawner.spawn(blink_led(led)).unwrap();
 
-    let timer_freq = khz(1_000); // Hz
-
     #[cfg(feature = "timer-16bit")]
     let (mut ic, ch) = {
         let ch1 = CapturePin::new_ch1(p.PB4, Pull::None);
@@ -165,7 +177,7 @@ async fn main(spawner: Spawner) {
             None,
             None,
             Irqs,
-            timer_freq,
+            TIMER_FREQ,
             CountingMode::EdgeAlignedUp,
         );
         (ic, Channel::Ch1)
@@ -181,7 +193,7 @@ async fn main(spawner: Spawner) {
             None,
             None,
             Irqs,
-            timer_freq,
+            TIMER_FREQ,
             CountingMode::EdgeAlignedUp,
         );
         (ic, Channel::Ch2)
