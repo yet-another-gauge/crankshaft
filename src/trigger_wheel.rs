@@ -1,3 +1,4 @@
+use crate::tick::Tick;
 use adskalman::{ObservationModel, TransitionModelLinearNoControl};
 use heapless::HistoryBuffer;
 use nalgebra::{Matrix1, Matrix1x3, Matrix3, Matrix3x1, U1, U3};
@@ -10,7 +11,7 @@ const DT: f64 = 0.01; // 10 milliseconds
 const DT_SQUARED_HALF: f64 = DT * DT * 0.5;
 
 pub struct TriggerWheel {
-    ticks: HistoryBuffer<u32, 128>,
+    ticks: HistoryBuffer<Tick, 128>,
 }
 
 impl TriggerWheel {
@@ -20,7 +21,7 @@ impl TriggerWheel {
         }
     }
 
-    pub fn add_tick(&mut self, tick: u32) {
+    pub fn add_tick(&mut self, tick: Tick) {
         self.ticks.write(tick);
     }
 

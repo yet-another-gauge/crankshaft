@@ -6,6 +6,7 @@ use panic_halt as _;
 #[cfg(feature = "defmt")]
 use {defmt_rtt as _, panic_probe as _};
 
+use crankshaft::tick::Tick;
 use crankshaft::trigger_wheel::TriggerWheel;
 use crankshaft::{debug, info};
 use embassy_executor::Spawner;
@@ -203,13 +204,16 @@ async fn main(spawner: Spawner) {
 
     loop {
         ic.wait_for_rising_edge(ch).await;
-        let tick = ic.get_capture_value(ch);
+
+        let captured_value = ic.get_capture_value(ch);
+        let tick = Tick::from_ticks(captured_value);
 
         trigger_wheel.add_tick(tick);
 
         info!(
-            "Captured tick {} μs, ticks stored: {}",
-            tick,
+            "Captured value {}, tick {}, ticks stored: {}",
+            captured_value,
+            tick.ticks(),
             trigger_wheel.ticks_count()
         );
     }
