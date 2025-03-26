@@ -10,11 +10,11 @@ use defmt::Format;
 const DT: f64 = 0.01; // 10 milliseconds
 const DT_SQUARED_HALF: f64 = DT * DT * 0.5;
 
-pub struct TriggerWheel {
-    ticks: HistoryBuffer<Tick, 128>,
+pub struct TriggerWheel<const N: usize> {
+    ticks: HistoryBuffer<Tick, N>,
 }
 
-impl TriggerWheel {
+impl<const N: usize> TriggerWheel<N> {
     pub fn new() -> Self {
         Self {
             ticks: HistoryBuffer::new(),
@@ -30,7 +30,7 @@ impl TriggerWheel {
     }
 }
 
-impl ObservationModel<f64, U3, U1> for TriggerWheel {
+impl<const N: usize> ObservationModel<f64, U3, U1> for TriggerWheel<N> {
     fn H(&self) -> &Matrix1x3<f64> {
         static H: Matrix1x3<f64> = Matrix1x3::new(0.0, 1.0, 0.0);
         &H
@@ -47,7 +47,7 @@ impl ObservationModel<f64, U3, U1> for TriggerWheel {
     }
 }
 
-impl TransitionModelLinearNoControl<f64, U3> for TriggerWheel {
+impl<const N: usize> TransitionModelLinearNoControl<f64, U3> for TriggerWheel<N> {
     fn F(&self) -> &Matrix3<f64> {
         // State transition matrix for constant acceleration model.
         #[rustfmt::skip]
@@ -94,7 +94,7 @@ impl TransitionModelLinearNoControl<f64, U3> for TriggerWheel {
 }
 
 #[cfg(feature = "defmt")]
-impl Format for TriggerWheel {
+impl<const N: usize> Format for TriggerWheel<N> {
     fn format(&self, f: defmt::Formatter) {
         defmt::write!(f, "TriggerWheel {{ ticks_count: {} }}", self.ticks_count())
     }

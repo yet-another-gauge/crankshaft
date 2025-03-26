@@ -200,19 +200,19 @@ async fn main(spawner: Spawner) {
         (ic, Channel::Ch2)
     };
 
-    let mut trigger_wheel = TriggerWheel::new();
+    let mut trigger_wheel: TriggerWheel<120> = TriggerWheel::new();
 
     loop {
         ic.wait_for_rising_edge(ch).await;
 
-        let captured_value = ic.get_capture_value(ch);
-        let tick = Tick::from_ticks(captured_value);
+        let captured_ticks = ic.get_capture_value(ch);
+        let tick = Tick::from_ticks(captured_ticks);
 
         trigger_wheel.add_tick(tick);
 
         info!(
-            "Captured value {}, tick {}, ticks stored: {}",
-            captured_value,
+            "Captured {}, tick {}, ticks stored: {}",
+            captured_ticks,
             tick.ticks(),
             trigger_wheel.ticks_count()
         );
