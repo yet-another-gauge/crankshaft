@@ -208,13 +208,23 @@ async fn main(spawner: Spawner) {
         let captured_ticks = ic.get_capture_value(ch);
         let tick = Tick::from_ticks(captured_ticks);
 
-        trigger_wheel.add_tick(tick);
+        let interval = trigger_wheel.add_tick(&tick);
 
-        info!(
-            "Captured {}, tick {}, ticks stored: {}",
-            captured_ticks,
-            tick.ticks(),
-            trigger_wheel.ticks_count()
-        );
+        if let Some(duration) = interval {
+            info!(
+                "Captured {}, tick {}, interval: {} s, ticks stored: {}",
+                captured_ticks,
+                tick.ticks(),
+                duration.to_millis(),
+                trigger_wheel.ticks_count()
+            );
+        } else {
+            info!(
+                "Captured {}, tick {}, ticks stored: {}",
+                captured_ticks,
+                tick.ticks(),
+                trigger_wheel.ticks_count()
+            );
+        }
     }
 }

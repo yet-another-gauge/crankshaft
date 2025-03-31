@@ -21,8 +21,18 @@ impl<const N: usize> TriggerWheel<N> {
         }
     }
 
-    pub fn add_tick(&mut self, tick: Tick) {
-        self.ticks.write(tick);
+    pub fn add_tick(&mut self, tick: &Tick) -> Option<fugit::Duration<u32, 1, 1_000_000>> {
+        let interval = self
+            .ticks
+            .recent()
+            .and_then(|recent_tick| match recent_tick {
+                _ if recent_tick <= tick => tick.checked_duration_since(*recent_tick),
+                _ => recent_tick.checked_duration_since(*tick),
+            });
+
+        self.ticks.write(*tick);
+
+        interval
     }
 
     pub fn ticks_count(&self) -> usize {
@@ -85,9 +95,9 @@ impl<const N: usize> TransitionModelLinearNoControl<f64, U3> for TriggerWheel<N>
         // in the model as we move from position to velocity to acceleration.
         #[rustfmt::skip]
         static Q: Matrix3<f64> = Matrix3::new(
-            0.001, 0.00, 0.0,
-            0.000, 0.01, 0.0,
-            0.000, 0.00, 0.1,
+            0.001,  0.0, 0.0,
+              0.0, 0.01, 0.0,
+              0.0,  0.0, 0.1,
         );
         &Q
     }
