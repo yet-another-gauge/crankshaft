@@ -1,5 +1,5 @@
-use crate::tick::Tick;
 use adskalman::{ObservationModel, TransitionModelLinearNoControl};
+use embassy_time::{Duration, Instant};
 use heapless::HistoryBuffer;
 use nalgebra::{Matrix1, Matrix1x3, Matrix3, Matrix3x1, U1, U3};
 
@@ -11,7 +11,7 @@ const DT: f64 = 0.01; // 10 milliseconds
 const DT_SQUARED_HALF: f64 = DT * DT * 0.5;
 
 pub struct TriggerWheel<const N: usize> {
-    ticks: HistoryBuffer<Tick, N>,
+    ticks: HistoryBuffer<Instant, N>,
 }
 
 impl<const N: usize> TriggerWheel<N> {
@@ -21,7 +21,7 @@ impl<const N: usize> TriggerWheel<N> {
         }
     }
 
-    pub fn add_tick(&mut self, tick: &Tick) -> Option<fugit::Duration<u32, 1, 1_000_000>> {
+    pub fn add_tick(&mut self, tick: &Instant) -> Option<Duration> {
         let interval = self
             .ticks
             .recent()

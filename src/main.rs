@@ -6,11 +6,10 @@ use panic_halt as _;
 #[cfg(feature = "defmt")]
 use {defmt_rtt as _, panic_probe as _};
 
-use crankshaft::tick::Tick;
 use crankshaft::trigger_wheel::TriggerWheel;
 use crankshaft::{debug, info};
 use embassy_executor::Spawner;
-use embassy_stm32::time::{hz, khz, Hertz};
+use embassy_stm32::time::{hz, mhz, Hertz};
 use embassy_stm32::timer::{self, Channel};
 use embassy_stm32::{bind_interrupts, peripherals, Config};
 use embassy_stm32::{
@@ -20,7 +19,7 @@ use embassy_stm32::{
         low_level::CountingMode,
     },
 };
-use embassy_time::Timer;
+use embassy_time::{Instant, Timer};
 
 // Timer frequency for input capture.
 //
@@ -34,7 +33,7 @@ use embassy_time::Timer;
 // - Maximum RPM (6000 RPM):
 //   - 100 revolutions per second = 3000 teeth per second
 //   - 0.33 ms between teeth = 330 timer ticks per tooth
-const TIMER_FREQ: Hertz = khz(1_000);
+const TIMER_FREQ: Hertz = mhz(1);
 
 bind_interrupts!(struct Irqs {
     TIM2 => timer::CaptureCompareInterruptHandler<peripherals::TIM2>;
@@ -182,18 +181,20 @@ async fn main(spawner: Spawner) {
     loop {
         ic.wait_for_rising_edge(ch).await;
 
-        let captured_ticks = ic.get_capture_value(ch);
-        let tick = Tick::from_ticks(captured_ticks);
+        let mcu_instant = Instant::now();
+        let mcu_ticks = mcu_instant.as_ticks();
+        let mcu_millis = mcu_instant.as_millis();
 
-        let interval = trigger_wheel.add_tick(&tick);
+        let tim2_ticks = ic.get_capture_value(ch);
+        let tim2_millis = tim2_ticks as u64 / 1000;
+        let tim2_instant = Instant::from_ticks(tim2_ticks as u64);
+
+        let interval = trigger_wheel.add_tick(&tim2_instant);
 
         if let Some(duration) = interval {
             info!(
-                "Captured {}, tick {}, interval: {} s, ticks stored: {}",
-                captured_ticks,
-                tick.ticks(),
-                duration.to_millis(),
-                trigger_wheel.ticks_count()
+                " MCU's clock ticks: {} ~ {} ms, TIM2' clock ticks: {} ~ {} ms, + {}",
+                mcu_ticks, mcu_millis, tim2_ticks, tim2_millis, duration
             );
         }
     }
