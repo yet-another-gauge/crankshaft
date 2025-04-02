@@ -23,6 +23,7 @@ embassy-stm32 = { version = "0.2.0", features = [
     "memory-x",
     "unstable-pac",
     "stm32f091rc",
+    "time-driver-tim3"
 ] }
 heapless = "0.8.0"
 adskalman = { version = "0.16.0", default-features = false }
@@ -57,7 +58,7 @@ incremental = true
 defmt = ["dep:defmt"]
 defmt-rtt = ["dep:defmt-rtt"]
 panic-probe = ["dep:panic-probe"]
-default = ["debug", "timer-32bit"]
+default = ["debug"]
 debug = [
     "defmt",
     "defmt-rtt",
@@ -68,5 +69,3 @@ debug = [
     "embassy-time/defmt-timestamp-uptime",
     "embassy-stm32/defmt",
 ]
-timer-16bit = ["embassy-stm32/time-driver-tim2"]
-timer-32bit = ["embassy-stm32/time-driver-tim3"]

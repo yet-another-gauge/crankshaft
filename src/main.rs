@@ -36,12 +36,6 @@ use embassy_time::Timer;
 //   - 0.33 ms between teeth = 330 timer ticks per tooth
 const TIMER_FREQ: Hertz = khz(1_000);
 
-#[cfg(feature = "timer-16bit")]
-bind_interrupts!(struct Irqs {
-    TIM3 => timer::CaptureCompareInterruptHandler<peripherals::TIM3>;
-});
-
-#[cfg(feature = "timer-32bit")]
 bind_interrupts!(struct Irqs {
     TIM2 => timer::CaptureCompareInterruptHandler<peripherals::TIM2>;
 });
@@ -168,23 +162,6 @@ async fn main(spawner: Spawner) {
     let led = Output::new(p.PA5, Level::Low, Speed::Low);
     spawner.spawn(blink_led(led)).unwrap();
 
-    #[cfg(feature = "timer-16bit")]
-    let (mut ic, ch) = {
-        let ch1 = CapturePin::new_ch1(p.PB4, Pull::None);
-        let ic = InputCapture::new(
-            p.TIM3,
-            Some(ch1),
-            None,
-            None,
-            None,
-            Irqs,
-            TIMER_FREQ,
-            CountingMode::EdgeAlignedUp,
-        );
-        (ic, Channel::Ch1)
-    };
-
-    #[cfg(feature = "timer-32bit")]
     let (mut ic, ch) = {
         let ch2 = CapturePin::new_ch2(p.PB3, Pull::None);
         let ic = InputCapture::new(
@@ -216,13 +193,6 @@ async fn main(spawner: Spawner) {
                 captured_ticks,
                 tick.ticks(),
                 duration.to_millis(),
-                trigger_wheel.ticks_count()
-            );
-        } else {
-            info!(
-                "Captured {}, tick {}, ticks stored: {}",
-                captured_ticks,
-                tick.ticks(),
                 trigger_wheel.ticks_count()
             );
         }
